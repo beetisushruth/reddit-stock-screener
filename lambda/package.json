@@ -1,0 +1,35 @@
+{
+  "name": "reddit-stock-screener-lambda",
+  "version": "1.0.0",
+  "description": "AWS Lambda function to scrape Reddit for stock DD posts",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "package": "pnpm run build && zip -r function.zip dist/ node_modules/"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "@aws-sdk/client-s3": "^3.450.0",
+    "@aws-sdk/client-sns": "^3.450.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.450.0",
+    "@aws-sdk/client-lambda": "^3.450.0",
+    "@aws-sdk/client-cloudwatch-logs": "^3.450.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  },
+  "keywords": [
+    "aws",
+    "lambda",
+    "reddit",
+    "stocks",
+    "scraper",
+    "typescript"
+  ],
+  "author": "",
+  "license": "MIT"
+} 
