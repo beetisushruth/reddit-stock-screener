@@ -140,3 +140,11 @@ vite.config.ts.timestamp-*
 **/package-lock.json
 **/pnpm-lock.yaml
 **/node_modules
+
+# CloudFormation specific
+parameters-prod.json
+parameters-staging.json
+*.template
+!cloudformation-template.yaml
+secrets/
+credentials/

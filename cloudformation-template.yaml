@@ -1,0 +1,467 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFormation template for Reddit Stock Screener with IAM, S3, EventBridge, Lambda, SNS, and Bedrock integration'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: 'dev'
+    Description: 'Environment name (dev, staging, prod)'
+    AllowedValues: ['dev', 'staging', 'prod']
+  
+  ProjectName:
+    Type: String
+    Default: 'reddit-stock-screener'
+    Description: 'Name for the project'
+  
+  SNSNotificationEmails:
+    Type: CommaDelimitedList
+    Description: 'Comma-separated list of email addresses for SNS notifications'
+    Default: 'admin@example.com'
+  
+  EventBridgeRuleName:
+    Type: String
+    Default: 'reddit-stock-screener-rule'
+    Description: 'Name for the EventBridge rule'
+  
+  EventBridgeRuleDescription:
+    Type: String
+    Default: 'Triggers Reddit Stock Screener Lambda function every 5 minutes'
+    Description: 'Description for the EventBridge rule'
+  
+  S3BucketName:
+    Type: String
+    Default: 'reddit-stock-screener-data'
+    Description: 'Name for the S3 bucket (must be globally unique)'
+
+Resources:
+  # S3 Bucket for storing data
+  StockScreenerS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${S3BucketName}-${Environment}-${AWS::AccountId}'
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldData
+            Status: Enabled
+            ExpirationInDays: 90
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # S3 Bucket Policy
+  StockScreenerS3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref StockScreenerS3Bucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyUnencryptedObjectUploads
+            Effect: Deny
+            Principal: '*'
+            Action: s3:PutObject
+            Resource: !Sub '${StockScreenerS3Bucket}/*'
+            Condition:
+              StringNotEquals:
+                s3:x-amz-server-side-encryption: AES256
+          - Sid: EnforceSSLOnly
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource: !Sub '${StockScreenerS3Bucket}/*'
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+
+  # IAM Role for Lambda
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-lambda-execution-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      Policies:
+        - PolicyName: LambdaCustomPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub '${StockScreenerS3Bucket}'
+                  - !Sub '${StockScreenerS3Bucket}/*'
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                  - sns:Subscribe
+                  - sns:Unsubscribe
+                Resource: !Ref StockScreenerSNSTopic
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:reddit-api-*'
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource: 
+                  - 'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0'
+                  - 'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-haiku-20240307-v1:0'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # SNS Topic for notifications
+  StockScreenerSNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-notifications-${Environment}'
+      DisplayName: !Sub 'Reddit Stock Screener Notifications - ${Environment}'
+      KmsMasterKeyId: alias/aws/sns
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # SNS Subscriptions for multiple email addresses
+  SNSEmailSubscription1:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref StockScreenerSNSTopic
+      Protocol: email
+      Endpoint: !Select [0, !Ref SNSNotificationEmails]
+
+  # Lambda Function
+  StockScreenerLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${Environment}'
+      Runtime: nodejs22.x
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 300
+      MemorySize: 512
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          SNS_TOPIC_ARN: !Ref StockScreenerSNSTopic
+          S3_BUCKET_NAME: !Ref StockScreenerS3Bucket
+          BEDROCK_MODEL_ID: 'anthropic.claude-3-sonnet-20240229-v1:0'
+          REDDIT_SUBREDDITS: 'wallstreetbets'
+      Code:
+        ZipFile: |
+          const AWS = require('aws-sdk');
+          const https = require('https');
+          
+          // Configure AWS SDK
+          AWS.config.update({ region: 'us-east-1' });
+          
+          // Initialize AWS clients
+          const s3 = new AWS.S3();
+          const sns = new AWS.SNS();
+          const bedrock = new AWS.BedrockRuntime();
+          
+          exports.handler = async (event, context) => {
+              try {
+                  console.log('Event received:', JSON.stringify(event, null, 2));
+                  
+                  // Get environment variables
+                  const snsTopicArn = process.env.SNS_TOPIC_ARN;
+                  const s3BucketName = process.env.S3_BUCKET_NAME;
+                  const bedrockModelId = process.env.BEDROCK_MODEL_ID;
+                  const subreddits = process.env.REDDIT_SUBREDDITS.split(',');
+                  
+                  // Collect Reddit data
+                  const redditData = await collectRedditData(subreddits);
+                  
+                  // Store data in S3
+                  await storeDataInS3(s3BucketName, redditData);
+                  
+                  // Analyze data with LLM
+                  const analysisResult = await analyzeWithLLM(redditData, bedrockModelId);
+                  
+                  // Store analysis in S3
+                  await storeAnalysisInS3(s3BucketName, analysisResult);
+                  
+                  // Send notification via SNS
+                  await sendNotification(snsTopicArn, analysisResult);
+                  
+                  return {
+                      statusCode: 200,
+                      body: JSON.stringify({
+                          message: 'Stock screener analysis completed successfully',
+                          timestamp: new Date().toISOString(),
+                          dataCollected: redditData,
+                          analysis: analysisResult
+                      })
+                  };
+                  
+              } catch (error) {
+                  console.error('Error in lambda_handler:', error);
+                  throw error;
+              }
+          };
+          
+          async function collectRedditData(subreddits) {
+              // This is a placeholder - replace with actual Reddit API integration
+              const mockData = {
+                  subreddits: subreddits,
+                  postsAnalyzed: Math.floor(Math.random() * 200) + 50,
+                  sentimentScore: (Math.random() * 0.6) + 0.2,
+                  topMentionedStocks: ['AAPL', 'TSLA', 'NVDA', 'AMD', 'META', 'GOOGL', 'MSFT', 'AMZN'],
+                  trendingTopics: ['AI', 'Earnings', 'Fed Decision', 'Market Volatility'],
+                  timestamp: new Date().toISOString(),
+                  executionId: context.awsRequestId
+              };
+              
+              console.log('Collected Reddit data:', mockData);
+              return mockData;
+          }
+          
+          async function storeDataInS3(bucketName, data) {
+              try {
+                  const key = `raw-data/${new Date().toISOString().split('T')[0]}/${Date.now()}-reddit-data.json`;
+                  
+                  const params = {
+                      Bucket: bucketName,
+                      Key: key,
+                      Body: JSON.stringify(data, null, 2),
+                      ContentType: 'application/json',
+                      ServerSideEncryption: 'AES256'
+                  };
+                  
+                  await s3.putObject(params).promise();
+                  console.log(`Data stored in S3: ${key}`);
+                  
+              } catch (error) {
+                  console.error('Error storing data in S3:', error);
+                  throw error;
+              }
+          }
+          
+          async function analyzeWithLLM(data, modelId) {
+              try {
+                  const prompt = `
+                  Analyze the following Reddit stock market data and provide comprehensive insights:
+                  
+                  Data: ${JSON.stringify(data, null, 2)}
+                  
+                  Please provide a detailed analysis including:
+                  1. Overall market sentiment analysis (bullish/bearish/neutral)
+                  2. Top trending stocks and the reasons behind their popularity
+                  3. Potential investment opportunities with reasoning
+                  4. Risk factors and market concerns to consider
+                  5. Summary and actionable recommendations
+                  6. Market trends and patterns identified
+                  
+                  Format the response as JSON with the following structure:
+                  {
+                    "sentiment": "bullish/bearish/neutral",
+                    "sentiment_score": 0.0-1.0,
+                    "trending_stocks": [{"symbol": "AAPL", "reason": "..."}],
+                    "opportunities": [{"stock": "TSLA", "reason": "..."}],
+                    "risks": ["risk1", "risk2"],
+                    "summary": "Overall summary",
+                    "recommendations": ["rec1", "rec2"]
+                  }
+                  `;
+                  
+                  const body = JSON.stringify({
+                      anthropic_version: "bedrock-2023-05-31",
+                      max_tokens: 1500,
+                      messages: [
+                          {
+                              role: "user",
+                              content: prompt
+                          }
+                      ]
+                  });
+                  
+                  const params = {
+                      modelId: modelId,
+                      body: body
+                  };
+                  
+                  const response = await bedrock.invokeModel(params).promise();
+                  const responseBody = JSON.parse(response.body.toString());
+                  const analysis = responseBody.content[0].text;
+                  
+                  console.log('LLM analysis completed');
+                  return analysis;
+                  
+              } catch (error) {
+                  console.error('Error in LLM analysis:', error);
+                  return `LLM analysis failed: ${error.message}`;
+              }
+          }
+          
+          async function storeAnalysisInS3(bucketName, analysis) {
+              try {
+                  const key = `analysis/${new Date().toISOString().split('T')[0]}/${Date.now()}-analysis.json`;
+                  
+                  const analysisData = {
+                      analysis: analysis,
+                      timestamp: new Date().toISOString(),
+                      model: process.env.BEDROCK_MODEL_ID
+                  };
+                  
+                  const params = {
+                      Bucket: bucketName,
+                      Key: key,
+                      Body: JSON.stringify(analysisData, null, 2),
+                      ContentType: 'application/json',
+                      ServerSideEncryption: 'AES256'
+                  };
+                  
+                  await s3.putObject(params).promise();
+                  console.log(`Analysis stored in S3: ${key}`);
+                  
+              } catch (error) {
+                  console.error('Error storing analysis in S3:', error);
+                  throw error;
+              }
+          }
+          
+          async function sendNotification(topicArn, analysis) {
+              try {
+                  const message = `
+                  📊 Reddit Stock Screener Analysis Report
+                  
+                  ${analysis}
+                  
+                  Generated at: ${new Date().toISOString()}
+                  Environment: ${process.env.ENVIRONMENT}
+                  
+                  ---
+                  This is an automated report from the Reddit Stock Screener Lambda function.
+                  `;
+                  
+                  const params = {
+                      TopicArn: topicArn,
+                      Subject: `Reddit Stock Screener Analysis - ${process.env.ENVIRONMENT}`,
+                      Message: message
+                  };
+                  
+                  await sns.publish(params).promise();
+                  console.log('SNS notification sent successfully');
+                  
+              } catch (error) {
+                  console.error('Error sending SNS notification:', error);
+                  throw error;
+              }
+          }
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # EventBridge Rule
+  StockScreenerEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Ref EventBridgeRuleName
+      Description: !Ref EventBridgeRuleDescription
+      ScheduleExpression: 'rate(5 minutes)'
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt StockScreenerLambda.Arn
+          Id: !Sub '${ProjectName}-target-${Environment}'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # EventBridge Permission for Lambda
+  LambdaEventBridgePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref StockScreenerLambda
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt StockScreenerEventRule.Arn
+
+  # CloudWatch Log Group for Lambda
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${StockScreenerLambda}'
+      RetentionInDays: 14
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+
+Outputs:
+  LambdaFunctionArn:
+    Description: 'ARN of the Lambda function'
+    Value: !GetAtt StockScreenerLambda.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-LambdaFunctionArn'
+
+  LambdaFunctionName:
+    Description: 'Name of the Lambda function'
+    Value: !Ref StockScreenerLambda
+    Export:
+      Name: !Sub '${AWS::StackName}-LambdaFunctionName'
+
+  SNSTopicArn:
+    Description: 'ARN of the SNS topic'
+    Value: !Ref StockScreenerSNSTopic
+    Export:
+      Name: !Sub '${AWS::StackName}-SNSTopicArn'
+
+  S3BucketName:
+    Description: 'Name of the S3 bucket'
+    Value: !Ref StockScreenerS3Bucket
+    Export:
+      Name: !Sub '${AWS::StackName}-S3BucketName'
+
+  IAMRoleArn:
+    Description: 'ARN of the Lambda execution role'
+    Value: !GetAtt LambdaExecutionRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-IAMRoleArn'
+
+  EventBridgeRuleArn:
+    Description: 'ARN of the EventBridge rule'
+    Value: !GetAtt StockScreenerEventRule.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-EventBridgeRuleArn'
