@@ -32,6 +32,16 @@ Parameters:
     Type: String
     Default: 'reddit-stock-screener-data'
     Description: 'Name for the S3 bucket (must be globally unique)'
+  
+  LambdaCodeS3Bucket:
+    Type: String
+    Description: 'S3 bucket containing the Lambda function ZIP file'
+    Default: 'reddit-stock-screener-lambda-code'
+  
+  LambdaCodeS3Key:
+    Type: String
+    Description: 'S3 key for the Lambda function ZIP file'
+    Default: 'lambda-function.zip'
 
 Resources:
   # S3 Bucket for storing data
@@ -183,207 +193,8 @@ Resources:
           BEDROCK_MODEL_ID: 'anthropic.claude-3-sonnet-20240229-v1:0'
           REDDIT_SUBREDDITS: 'wallstreetbets'
       Code:
-        ZipFile: |
-          const AWS = require('aws-sdk');
-          const https = require('https');
-          
-          // Configure AWS SDK
-          AWS.config.update({ region: 'us-east-1' });
-          
-          // Initialize AWS clients
-          const s3 = new AWS.S3();
-          const sns = new AWS.SNS();
-          const bedrock = new AWS.BedrockRuntime();
-          
-          exports.handler = async (event, context) => {
-              try {
-                  console.log('Event received:', JSON.stringify(event, null, 2));
-                  
-                  // Get environment variables
-                  const snsTopicArn = process.env.SNS_TOPIC_ARN;
-                  const s3BucketName = process.env.S3_BUCKET_NAME;
-                  const bedrockModelId = process.env.BEDROCK_MODEL_ID;
-                  const subreddits = process.env.REDDIT_SUBREDDITS.split(',');
-                  
-                  // Collect Reddit data
-                  const redditData = await collectRedditData(subreddits);
-                  
-                  // Store data in S3
-                  await storeDataInS3(s3BucketName, redditData);
-                  
-                  // Analyze data with LLM
-                  const analysisResult = await analyzeWithLLM(redditData, bedrockModelId);
-                  
-                  // Store analysis in S3
-                  await storeAnalysisInS3(s3BucketName, analysisResult);
-                  
-                  // Send notification via SNS
-                  await sendNotification(snsTopicArn, analysisResult);
-                  
-                  return {
-                      statusCode: 200,
-                      body: JSON.stringify({
-                          message: 'Stock screener analysis completed successfully',
-                          timestamp: new Date().toISOString(),
-                          dataCollected: redditData,
-                          analysis: analysisResult
-                      })
-                  };
-                  
-              } catch (error) {
-                  console.error('Error in lambda_handler:', error);
-                  throw error;
-              }
-          };
-          
-          async function collectRedditData(subreddits) {
-              // This is a placeholder - replace with actual Reddit API integration
-              const mockData = {
-                  subreddits: subreddits,
-                  postsAnalyzed: Math.floor(Math.random() * 200) + 50,
-                  sentimentScore: (Math.random() * 0.6) + 0.2,
-                  topMentionedStocks: ['AAPL', 'TSLA', 'NVDA', 'AMD', 'META', 'GOOGL', 'MSFT', 'AMZN'],
-                  trendingTopics: ['AI', 'Earnings', 'Fed Decision', 'Market Volatility'],
-                  timestamp: new Date().toISOString(),
-                  executionId: context.awsRequestId
-              };
-              
-              console.log('Collected Reddit data:', mockData);
-              return mockData;
-          }
-          
-          async function storeDataInS3(bucketName, data) {
-              try {
-                  const key = `raw-data/${new Date().toISOString().split('T')[0]}/${Date.now()}-reddit-data.json`;
-                  
-                  const params = {
-                      Bucket: bucketName,
-                      Key: key,
-                      Body: JSON.stringify(data, null, 2),
-                      ContentType: 'application/json',
-                      ServerSideEncryption: 'AES256'
-                  };
-                  
-                  await s3.putObject(params).promise();
-                  console.log(`Data stored in S3: ${key}`);
-                  
-              } catch (error) {
-                  console.error('Error storing data in S3:', error);
-                  throw error;
-              }
-          }
-          
-          async function analyzeWithLLM(data, modelId) {
-              try {
-                  const prompt = `
-                  Analyze the following Reddit stock market data and provide comprehensive insights:
-                  
-                  Data: ${JSON.stringify(data, null, 2)}
-                  
-                  Please provide a detailed analysis including:
-                  1. Overall market sentiment analysis (bullish/bearish/neutral)
-                  2. Top trending stocks and the reasons behind their popularity
-                  3. Potential investment opportunities with reasoning
-                  4. Risk factors and market concerns to consider
-                  5. Summary and actionable recommendations
-                  6. Market trends and patterns identified
-                  
-                  Format the response as JSON with the following structure:
-                  {
-                    "sentiment": "bullish/bearish/neutral",
-                    "sentiment_score": 0.0-1.0,
-                    "trending_stocks": [{"symbol": "AAPL", "reason": "..."}],
-                    "opportunities": [{"stock": "TSLA", "reason": "..."}],
-                    "risks": ["risk1", "risk2"],
-                    "summary": "Overall summary",
-                    "recommendations": ["rec1", "rec2"]
-                  }
-                  `;
-                  
-                  const body = JSON.stringify({
-                      anthropic_version: "bedrock-2023-05-31",
-                      max_tokens: 1500,
-                      messages: [
-                          {
-                              role: "user",
-                              content: prompt
-                          }
-                      ]
-                  });
-                  
-                  const params = {
-                      modelId: modelId,
-                      body: body
-                  };
-                  
-                  const response = await bedrock.invokeModel(params).promise();
-                  const responseBody = JSON.parse(response.body.toString());
-                  const analysis = responseBody.content[0].text;
-                  
-                  console.log('LLM analysis completed');
-                  return analysis;
-                  
-              } catch (error) {
-                  console.error('Error in LLM analysis:', error);
-                  return `LLM analysis failed: ${error.message}`;
-              }
-          }
-          
-          async function storeAnalysisInS3(bucketName, analysis) {
-              try {
-                  const key = `analysis/${new Date().toISOString().split('T')[0]}/${Date.now()}-analysis.json`;
-                  
-                  const analysisData = {
-                      analysis: analysis,
-                      timestamp: new Date().toISOString(),
-                      model: process.env.BEDROCK_MODEL_ID
-                  };
-                  
-                  const params = {
-                      Bucket: bucketName,
-                      Key: key,
-                      Body: JSON.stringify(analysisData, null, 2),
-                      ContentType: 'application/json',
-                      ServerSideEncryption: 'AES256'
-                  };
-                  
-                  await s3.putObject(params).promise();
-                  console.log(`Analysis stored in S3: ${key}`);
-                  
-              } catch (error) {
-                  console.error('Error storing analysis in S3:', error);
-                  throw error;
-              }
-          }
-          
-          async function sendNotification(topicArn, analysis) {
-              try {
-                  const message = `
-                  📊 Reddit Stock Screener Analysis Report
-                  
-                  ${analysis}
-                  
-                  Generated at: ${new Date().toISOString()}
-                  Environment: ${process.env.ENVIRONMENT}
-                  
-                  ---
-                  This is an automated report from the Reddit Stock Screener Lambda function.
-                  `;
-                  
-                  const params = {
-                      TopicArn: topicArn,
-                      Subject: `Reddit Stock Screener Analysis - ${process.env.ENVIRONMENT}`,
-                      Message: message
-                  };
-                  
-                  await sns.publish(params).promise();
-                  console.log('SNS notification sent successfully');
-                  
-              } catch (error) {
-                  console.error('Error sending SNS notification:', error);
-                  throw error;
-              }
-          }
+        S3Bucket: !Ref LambdaCodeS3Bucket
+        S3Key: !Ref LambdaCodeS3Key
       Tags:
         - Key: Environment
           Value: !Ref Environment
