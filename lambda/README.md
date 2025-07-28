@@ -15,6 +15,104 @@ This AWS Lambda function scrapes r/WallStreetBets for new posts, identifies DD (
 - **SNS Notifications**: Sends alerts for high-quality DD posts
 - **AWS SDK v3**: Native AWS service integration
 
+## Local Testing
+
+### Quick Start
+```bash
+# Setup local environment
+pnpm run setup
+
+# Run individual component tests
+pnpm run test:reddit      # Test Reddit API
+pnpm run test:dd-filter   # Test DD filtering
+pnpm run test:llm         # Test LLM evaluation
+pnpm run test:storage     # Test S3 storage
+pnpm run test:notification # Test SNS notifications
+
+# Run full pipeline test
+pnpm run test:local
+
+# Run all tests
+pnpm run test:all
+```
+
+### Test Scripts Explained
+
+#### `test-reddit.ts`
+- Fetches posts from r/WallStreetBets
+- Tests pagination functionality
+- Displays sample posts with metadata
+
+#### `test-dd-filter.ts`
+- Tests DD post filtering logic
+- Shows detailed filtering criteria
+- Lists all DD posts found
+
+#### `test-llm.ts`
+- Tests Amazon Bedrock integration
+- Evaluates mock high-quality and low-quality posts
+- Shows quality scores and reasoning
+
+#### `test-storage.ts`
+- Tests S3 operations for state management
+- Tests post archiving functionality
+- Verifies data persistence
+
+#### `test-notification.ts`
+- Tests SNS notification sending
+- Tests quality threshold logic
+- Sends test email notifications
+
+#### `test-full-pipeline.ts`
+- Runs the complete Lambda pipeline locally
+- Tests all components in sequence
+- Provides comprehensive summary
+
+### Environment Setup
+
+1. **Copy environment template:**
+   ```bash
+   cp env.example .env
+   ```
+
+2. **Configure your .env file:**
+   ```bash
+   # AWS Configuration
+   AWS_REGION=us-east-1
+   
+   # S3 Configuration
+   S3_BUCKET_NAME=your-dd-posts-bucket
+   
+   # SNS Configuration
+   SNS_TOPIC_ARN=arn:aws:sns:region:account:topic-name
+   NOTIFICATION_EMAIL=your-email@example.com
+   
+   # LLM Configuration
+   QUALITY_THRESHOLD=7.0
+   BEDROCK_MODEL_ID=anthropic.claude-3-sonnet-20240229-v1:0
+   ```
+
+3. **Verify AWS credentials:**
+   ```bash
+   aws sts get-caller-identity
+   ```
+
+### Testing Strategy
+
+1. **Start with Reddit API** - Ensure you can fetch posts
+2. **Test DD Filtering** - Verify filtering logic works
+3. **Test LLM Integration** - Check Bedrock connectivity
+4. **Test Storage** - Verify S3 operations
+5. **Test Notifications** - Check SNS functionality
+6. **Run Full Pipeline** - Test everything together
+
+### Troubleshooting
+
+- **AWS Credentials**: Use `aws configure` or IAM roles
+- **S3 Permissions**: Ensure bucket exists and you have read/write access
+- **SNS Setup**: Run `node scripts/setup-sns.js` to create topic and subscribe email
+- **Bedrock Access**: Verify you have access to the specified model in your region
+
 ## Setup Instructions
 
 ### 1. AWS Lambda Setup
