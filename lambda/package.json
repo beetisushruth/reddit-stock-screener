@@ -8,8 +8,10 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "package": "pnpm run build && zip -r function.zip dist/ node_modules/",
+    "package": "pnpm run build && ./package-lambda.sh",
     "test:reddit": "node dist/scripts/test-reddit.js",
+    "test:reddit-api": "node dist/scripts/test-reddit-api.js",
+    "test:reddit-oauth": "node dist/scripts/test-reddit-oauth.js",
     "test:dd-filter": "node dist/scripts/test-dd-filter.js",
     "test:llm": "node dist/scripts/test-llm.js",
     "test:storage": "node dist/scripts/test-storage.js",
@@ -25,7 +27,8 @@
     "@aws-sdk/client-sns": "^3.450.0",
     "@aws-sdk/client-bedrock-runtime": "^3.450.0",
     "@aws-sdk/client-lambda": "^3.450.0",
-    "@aws-sdk/client-cloudwatch-logs": "^3.450.0"
+    "@aws-sdk/client-cloudwatch-logs": "^3.450.0",
+    "@aws-sdk/client-secrets-manager": "^3.450.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

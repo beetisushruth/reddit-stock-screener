@@ -4,7 +4,13 @@ export const CONFIG = {
     // Reddit API configuration
     SUBREDDIT: 'wallstreetbets',
     POST_LIMIT: 100,
-    USER_AGENT: 'StockScreenerBot/1.0 (by /u/mopogos)',
+    USER_AGENT: 'aws-lambda:rstock-post-handler:1.0 (by /u/mopogos)',
+    REDDIT_API_RATE_LIMIT: 60, // requests per minute
+    REDDIT_API_TIMEOUT: 10000, // 10 seconds
+    
+    // Reddit OAuth credentials (from AWS Secrets Manager)
+    REDDIT_CLIENT_ID: process.env.REDDIT_CLIENT_ID || '',
+    REDDIT_SECRETS_ARN: process.env.REDDIT_SECRETS_ARN || 'arn:aws:secretsmanager:us-east-1:967129199492:secret:rstock-XYkMNt',
     
     // AWS configuration
     AWS_REGION: process.env.AWS_REGION || 'us-east-1',

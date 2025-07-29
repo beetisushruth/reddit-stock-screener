@@ -7,6 +7,10 @@ This AWS Lambda function scrapes r/WallStreetBets for new posts, identifies DD (
 - **TypeScript**: Full type safety and modern JavaScript features
 - **Modular Architecture**: Clean separation of concerns with dedicated services
 - **Reddit API Integration**: Fetches latest posts from r/WallStreetBets
+  - OAuth authentication required for API access
+  - Follows Reddit API guidelines and rate limiting (60 requests/minute)
+  - Proper User-Agent format: `platform:app:version:username`
+  - Handles pagination and error cases gracefully
 - **Pagination Support**: Uses Reddit's `after` parameter to avoid duplicate processing
 - **DD Post Filtering**: Identifies DD content using keywords, flair, and patterns
 - **LLM Evaluation**: Uses Amazon Bedrock to evaluate post quality
@@ -75,10 +79,26 @@ pnpm run test:all
    cp env.example .env
    ```
 
-2. **Configure your .env file:**
+2. **Set up Reddit OAuth credentials:**
+   - Go to https://www.reddit.com/prefs/apps
+   - Click "Create App" or "Create Another App"
+   - Choose "script" as the app type
+   - Fill in the required fields:
+     - Name: `Reddit Stock Screener`
+     - Description: `AWS Lambda function for scraping stock DD posts`
+     - About URL: `https://github.com/your-username/reddit-stock-screener`
+     - Redirect URI: `http://localhost:8080` (for script apps)
+   - After creating, note your Client ID (under the app name)
+   - The Client Secret is the string under "secret"
+
+3. **Configure your .env file:**
    ```bash
    # AWS Configuration
    AWS_REGION=us-east-1
+   
+   # Reddit OAuth Credentials (Required)
+   REDDIT_CLIENT_ID=your_reddit_client_id
+   REDDIT_CLIENT_SECRET=your_reddit_client_secret
    
    # S3 Configuration
    S3_BUCKET_NAME=your-dd-posts-bucket
@@ -92,7 +112,7 @@ pnpm run test:all
    BEDROCK_MODEL_ID=anthropic.claude-3-sonnet-20240229-v1:0
    ```
 
-3. **Verify AWS credentials:**
+4. **Verify AWS credentials:**
    ```bash
    aws sts get-caller-identity
    ```

@@ -148,7 +148,7 @@ parameters-staging.json
 !cloudformation-template.yaml
 secrets/
 credentials/
-**/function.zip
+**/lambda-function.zip
 **/terraform/**
 **/deploy.sh
 **/DS_Store

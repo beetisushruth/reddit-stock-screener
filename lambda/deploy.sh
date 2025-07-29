@@ -7,7 +7,7 @@ pnpm install
 pnpm run build
 
 # Create deployment package
-zip -r function.zip dist/ node_modules/
+pnpm run package
 
 # Deploy to AWS Lambda (you'll need to update the function name)
 aws lambda update-function-code \
