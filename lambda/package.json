@@ -1,0 +1,47 @@
+{
+  "name": "reddit-stock-screener-lambda",
+  "version": "1.0.0",
+  "description": "AWS Lambda function to scrape Reddit for stock DD posts",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "package": "pnpm run build && ./package-lambda.sh",
+    "test:reddit": "node dist/scripts/test-reddit.js",
+    "test:reddit-api": "node dist/scripts/test-reddit-api.js",
+    "test:reddit-oauth": "node dist/scripts/test-reddit-oauth.js",
+    "test:dd-filter": "node dist/scripts/test-dd-filter.js",
+    "test:llm": "node dist/scripts/test-llm.js",
+    "test:storage": "node dist/scripts/test-storage.js",
+    "test:notification": "node dist/scripts/test-notification.js",
+    "test:pipeline": "node dist/scripts/test-full-pipeline.js",
+    "test:all": "pnpm run test:reddit && pnpm run test:dd-filter && pnpm run test:llm && pnpm run test:storage && pnpm run test:notification",
+    "test:local": "pnpm run test:pipeline",
+    "setup": "node dist/scripts/setup-local.js"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "@aws-sdk/client-s3": "^3.450.0",
+    "@aws-sdk/client-sns": "^3.450.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.450.0",
+    "@aws-sdk/client-lambda": "^3.450.0",
+    "@aws-sdk/client-cloudwatch-logs": "^3.450.0",
+    "@aws-sdk/client-secrets-manager": "^3.450.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  },
+  "keywords": [
+    "aws",
+    "lambda",
+    "reddit",
+    "stocks",
+    "scraper",
+    "typescript"
+  ],
+  "author": "",
+  "license": "MIT"
+} 
